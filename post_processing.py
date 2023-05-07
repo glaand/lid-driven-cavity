@@ -2,14 +2,64 @@ import pickle
 import numpy as np
 import matplotlib.pyplot as plt
 
+# Ghia et al. (1982) - Re = 100
+reference_vx_RE_100 = {
+    128: 1.00000,
+    125: 0.84123,
+    124: 0.78871,
+    123: 0.73722,
+    122: 0.68717,
+    109: 0.23151,
+    94: 0.00332,
+    79: -0.13641,
+    64: -0.20581,
+    58: -0.21090,
+    36: -0.15662,
+    22: -0.10150,
+    13: -0.06434,
+    9: -0.04775,
+    8: -0.04192,
+    7: -0.03717,
+    0: 0.00000
+}
+
+# Ghia et al. (1982) - Re = 100
+reference_vy_RE_100 = {
+    128: 0.00000,
+    124: -0.05906,
+    123: -0.07391,
+    122: -0.08864,
+    121: -0.10313,
+    116: -0.16914,
+    110: -0.22445,
+    103: -0.24533,
+    64: 0.05454,
+    30: 0.17527,
+    29: 0.17507,
+    20: 0.16077,
+    12: 0.12317,
+    10: 0.10890,
+    9: 0.10091,
+    8: 0.09233,
+    0: 0.00000
+}
+
 def post_processing(vars, filename):
     length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, vxo, vyo, po, ro, vxn, vyn, pn, rn, t, tot_p, tot_v, iterations, diffs, p_diffs = vars
     vmo = np.sqrt(vxo**2 + vyo**2)
     X, Y = np.meshgrid(np.linspace(0, length_x, grid_size_x), np.linspace(0, length_y, grid_size_y))	
-    fig, axs = plt.subplots(5, 2, figsize=(16, 25))
+    fig, axs = plt.subplots(6, 2, figsize=(14, 30))
+    fig.tight_layout(pad=5.0)
+    plt.subplots_adjust(top=0.9)
     plt.xlabel('X')
     plt.ylabel('Y')
-    plt.suptitle(f"for dt = {dt} s, dx = {dx} m, dy = {dy} m, t = {t} s, iter = {iterations}", fontsize=24)
+    textlist = [
+        f"dt = {dt} s, t = {t} s",
+        f"dx = {dx} m, dy = {dy} m",
+        f"Grid size = {grid_size_x} x {grid_size_y}",
+        f"iter = {iterations}",
+    ]
+    plt.suptitle("\n".join(textlist), fontsize=24)
     
     # First Plot
     axs[0,0].set_title(f"Velocity streamlines")
@@ -23,7 +73,7 @@ def post_processing(vars, filename):
 
     # Third Plot
     axs[1,0].remove()
-    axs[1,0]=fig.add_subplot(5,2,3,projection='3d')
+    axs[1,0]=fig.add_subplot(6,2,3,projection='3d')
     plot10 = axs[1,0].plot_surface(X,Y, po.T, cmap='plasma', rstride=1, cstride=1)
     axs[1,0].set_xlabel('$x$')
     axs[1,0].set_zlabel('$p$')
@@ -38,7 +88,7 @@ def post_processing(vars, filename):
 
     # Fifth Plot
     axs[2,0].remove()
-    axs[2,0]=fig.add_subplot(5,2,5,projection='3d')
+    axs[2,0]=fig.add_subplot(6,2,5,projection='3d')
     plot20 = axs[2,0].plot_surface(X,Y, vmo.T, cmap='plasma', rstride=1, cstride=1)
     axs[2,0].set_xlabel('$x$')
     axs[2,0].set_zlabel('$|u|$')
@@ -84,15 +134,27 @@ def post_processing(vars, filename):
     axs[4,1].set_xlabel('$iterations$')
     axs[4,1].set_ylabel('$|p_{n+1}-p_{n}|$')
     axs[4,1].legend()
+
+    # Eleventh Plot
+    axs[5,0].set_title("X-velocity along Vertical Line through Geometric Center of Cavity")
+    axs[5,0].plot(vxn[int(grid_size_x/2), :], label="X-velocity (André Glatzl)", color="orange")
+    axs[5,0].scatter(reference_vx_RE_100.keys(), reference_vx_RE_100.values(), label="X-velocity (Ghia et al.)", color="blue")
+    axs[5,0].set_xlabel('$x$')
+    axs[5,0].set_ylabel('$Vx$')
+    axs[5,0].legend()
+
+    # Twelfth Plot
+    axs[5,1].set_title("Y-velocity along Horizontal Line through Geometric Center of Cavity")
+    axs[5,1].plot(vyn[:,int(grid_size_y/2)], label="Y-velocity (André Glatzl)", color="orange")
+    axs[5,1].scatter(reference_vy_RE_100.keys(), reference_vy_RE_100.values(), label="Y-velocity (Ghia et al.)", color="blue")
+    axs[5,1].set_xlabel('$y$')
+    axs[5,1].set_ylabel('$Vy$')
+    axs[5,1].legend()
     
     plt.savefig(f"{filename}.png")
     plt.show()
 
 if __name__ == "__main__":
-    # Simulation 1
-    ##with open("simulation_v1.pickle", "rb") as f:
-    #    vars1 = pickle.load(f)
-    #post_processing(vars1, "simulation_v1")
-    with open("simulation_v2.pickle", "rb") as f:
-        vars2 = pickle.load(f)
-    post_processing(vars2, "simulation_v2")
+    with open("simulation.pickle", "rb") as f:
+        vars = pickle.load(f)
+    post_processing(vars, "simulation")
