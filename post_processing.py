@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 # Ghia et al. (1982) - Re = 100
-reference_vx_RE_100 = {
+reference_ux_RE_100 = {
     128: 1.00000,
     125: 0.84123,
     124: 0.78871,
@@ -24,7 +24,7 @@ reference_vx_RE_100 = {
 }
 
 # Ghia et al. (1982) - Re = 100
-reference_vy_RE_100 = {
+reference_uy_RE_100 = {
     128: 0.00000,
     124: -0.05906,
     123: -0.07391,
@@ -45,8 +45,8 @@ reference_vy_RE_100 = {
 }
 
 def post_processing(vars, filename):
-    length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, vxo, vyo, po, ro, vxn, vyn, pn, rn, t, tot_p, tot_v, iterations, diffs, p_diffs = vars
-    vmo = np.sqrt(vxo**2 + vyo**2)
+    length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, uxo, uyo, po, ro, uxn, uyn, pn, rn, t, tot_p, tot_v, iterations, diffs, p_diffs = vars
+    vmo = np.sqrt(uxo**2 + uyo**2)
     X, Y = np.meshgrid(np.linspace(0, length_x, grid_size_x), np.linspace(0, length_y, grid_size_y))	
     fig, axs = plt.subplots(6, 2, figsize=(14, 30))
     fig.tight_layout(pad=5.0)
@@ -63,13 +63,13 @@ def post_processing(vars, filename):
     
     # First Plot
     axs[0,0].set_title(f"Velocity streamlines")
-    axs[0,0].streamplot(X, Y, vxo.T, vyo.T, color="blue", density=1.5)
+    axs[0,0].streamplot(X, Y, uxo.T, uyo.T, color="blue", density=1.5)
     axs[0,0].set_xlabel('$x$')
     axs[0,0].set_ylabel('$y$')
 
     # Second Plot
     axs[0,1].set_title("Velocity streamliens with color gradient")
-    axs[0,1].streamplot(X, Y, vxo.T, vyo.T, color=vmo.T, density=10)
+    axs[0,1].streamplot(X, Y, uxo.T, uyo.T, color=vmo.T, density=10)
 
     # Third Plot
     axs[1,0].remove()
@@ -121,7 +121,6 @@ def post_processing(vars, filename):
     axs[4,0].set_title("Residual log plot of velocity magnitude")
     axs[4,0].loglog(diffs, label="Velocity diff")
     axs[4,0].axhline(y=min_tol, color='r', linestyle='--', label=f"Minimum tolerance = {min_tol}")
-    #axs[4,0].axhline(y=max_tol, color='b', linestyle='--', label="Maximum tolerance")
     axs[4,0].set_xlabel('$iterations$')
     axs[4,0].set_ylabel('$|u_{n+1}-u_{n}|$')
     axs[4,0].legend()
@@ -130,23 +129,22 @@ def post_processing(vars, filename):
     axs[4,1].set_title("Residual log plot of pressure")
     axs[4,1].loglog(p_diffs, label="Velocity diff")
     axs[4,1].axhline(y=min_tol, color='r', linestyle='--', label=f"Minimum tolerance = {min_tol}")
-    #axs[4,1].axhline(y=max_tol, color='b', linestyle='--', label="Maximum Tolerance")
     axs[4,1].set_xlabel('$iterations$')
     axs[4,1].set_ylabel('$|p_{n+1}-p_{n}|$')
     axs[4,1].legend()
 
     # Eleventh Plot
     axs[5,0].set_title("X-velocity along Vertical Line through Geometric Center of Cavity")
-    axs[5,0].plot(vxn[int(grid_size_x/2), :], label="X-velocity (André Glatzl)", color="orange")
-    axs[5,0].scatter(reference_vx_RE_100.keys(), reference_vx_RE_100.values(), label="X-velocity (Ghia et al.)", color="blue")
+    axs[5,0].plot(uxn[int(grid_size_x/2), :], label="X-velocity (André Glatzl)", color="orange")
+    axs[5,0].scatter(reference_ux_RE_100.keys(), reference_ux_RE_100.values(), label="X-velocity (Ghia et al.)", color="blue")
     axs[5,0].set_xlabel('$x$')
     axs[5,0].set_ylabel('$Vx$')
     axs[5,0].legend()
 
     # Twelfth Plot
     axs[5,1].set_title("Y-velocity along Horizontal Line through Geometric Center of Cavity")
-    axs[5,1].plot(vyn[:,int(grid_size_y/2)], label="Y-velocity (André Glatzl)", color="orange")
-    axs[5,1].scatter(reference_vy_RE_100.keys(), reference_vy_RE_100.values(), label="Y-velocity (Ghia et al.)", color="blue")
+    axs[5,1].plot(uyn[:,int(grid_size_y/2)], label="Y-velocity (André Glatzl)", color="orange")
+    axs[5,1].scatter(reference_uy_RE_100.keys(), reference_uy_RE_100.values(), label="Y-velocity (Ghia et al.)", color="blue")
     axs[5,1].set_xlabel('$y$')
     axs[5,1].set_ylabel('$Vy$')
     axs[5,1].legend()
