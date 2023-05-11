@@ -1,6 +1,14 @@
 import pickle
 import numpy as np
 import matplotlib.pyplot as plt
+from tqdm import tqdm
+import multiprocessing as mp
+import optparse
+import imageio
+import shutil
+import glob
+import sys
+import os
 
 # Ghia et al. (1982) - Re = 100
 reference_ux_RE_100 = {
@@ -44,7 +52,7 @@ reference_uy_RE_100 = {
     0: 0.00000
 }
 
-def post_processing(vars, filename):
+def post_processing(vars, output_file):
     length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, uxo, uyo, po, ro, uxn, uyn, pn, rn, t, tot_p, tot_v, iterations, diffs, p_diffs = vars
     vmo = np.sqrt(uxo**2 + uyo**2)
     X, Y = np.meshgrid(np.linspace(0, length_x, grid_size_x), np.linspace(0, length_y, grid_size_y))	
@@ -149,10 +157,45 @@ def post_processing(vars, filename):
     axs[5,1].set_ylabel('$Vy$')
     axs[5,1].legend()
     
-    plt.savefig(f"{filename}.png")
-    plt.show()
+    plt.savefig(f"{output_file}")
+
+def prepare_post_processing(args):
+    input_file, output_file = args
+    with open(input_file, "rb") as f:
+        vars = pickle.load(f)
+    post_processing(vars, output_file)
 
 if __name__ == "__main__":
-    with open("simulation.pickle", "rb") as f:
-        vars = pickle.load(f)
-    post_processing(vars, "simulation")
+    parser = optparse.OptionParser()
+    parser.add_option('-i', '--input', dest='input', help='Input file name or folder (if video) [default: %default]', default="simulation.pickle")
+    parser.add_option('-o', '--output', dest='output', help='Image Output file name with extension [required]')
+    parser.add_option('-v', '--video', dest='video', default='no', type='string', help='Create video (yes|no)  [default: %default]')
+    (options, args) = parser.parse_args()
+    required = ['output']
+    for r in required:
+        if options.__dict__[r] is None:
+            parser.print_help()
+            sys.exit(1)
+    if options.video == 'yes':
+        output_dir = 'output_img'
+        # delete folder if exists
+        if os.path.exists(output_dir):
+            shutil.rmtree(output_dir)
+        # create folder
+        os.makedirs(output_dir)
+        input_files = glob.glob(f"{options.input}/*.pickle")
+        output_files = list(map(lambda x: x.replace(f"{options.input}/", f"{output_dir}/").replace(".pickle", ".jpg"), input_files))
+        args = list(zip(input_files, output_files))
+        with mp.Pool() as pool:
+            for _ in tqdm(pool.imap_unordered(prepare_post_processing, args), total=len(args)):
+                pass
+        files = sorted(glob.glob(f"{output_dir}/*.jpg"), key=os.path.getmtime)
+        with imageio.get_writer(options.output, mode='I') as writer:
+            for filename in files:
+                image = imageio.imread(filename)
+                writer.append_data(image)
+
+        if os.path.exists(output_dir):
+            shutil.rmtree(output_dir)
+    else:
+        prepare_post_processing((options.input, options.output))

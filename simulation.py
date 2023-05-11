@@ -6,8 +6,10 @@ import matplotlib.animation as anime
 from tqdm import tqdm
 import multiprocessing
 import time
-
-MAX_ITERATIONS = int(30e6)
+import sys
+import os
+import shutil
+import optparse
 
 """
 2017 A. R. Malipeddi
@@ -118,7 +120,6 @@ def update_boundaries(uxo, uyo, po):
 def solve_navier_stokes(uxo, uyo, po, ro, uxn, uyn, pn, rn, dt, dx, dy, dx2, dy2, length_x, length_y, rho, nu, grid_size_x, grid_size_y, min_tol, max_tol):    
     # Step 1: Solve pressure equation
     # http://www.thevisualroom.com/poisson_for_pressure.html
-    iterations = 0
     diff = np.inf
     diffs = []
     # Calculate pressure
@@ -134,7 +135,6 @@ def solve_navier_stokes(uxo, uyo, po, ro, uxn, uyn, pn, rn, dt, dx, dy, dx2, dy2
     diff = np.abs(norm_pn - norm_po)
     diffs.append(diff)
     po = pn.copy()
-    iterations += 50
     diffs = np.average(diffs)
 
     # Step 2: Solve momentum equation without pressure gradient
@@ -149,26 +149,61 @@ def solve_navier_stokes(uxo, uyo, po, ro, uxn, uyn, pn, rn, dt, dx, dy, dx2, dy2
 
     return uxn, uyn, pn, rn, diffs
 
-def save_results(length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, uxo, uyo, po, ro, uxn, uyn, pn, rn, t, tot_p, tot_v, iterations, diffs, p_diffs):
+def save_results(options, length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, uxo, uyo, po, ro, uxn, uyn, pn, rn, t, tot_p, tot_v, iterations, diffs, p_diffs):
     uxo, uyo, po = update_boundaries(uxo, uyo, po)
     vars = [length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, uxo, uyo, po, ro, uxn, uyn, pn, rn, t, tot_p, tot_v, iterations, diffs, p_diffs]
-    with open('simulation.pickle', 'wb') as f:
-        pickle.dump(vars, f)
+    if options.video == 'yes':
+        num = str(iterations).zfill(4)
+        output_file = f"{options.output}/simulation.{num}.pickle"
+        with open(output_file, 'wb') as f:
+            pickle.dump(vars, f)
+    else:
+        output_file = f"{options.output}"
+        with open(output_file, 'wb') as f:
+            pickle.dump(vars, f)
 
 # 2. Main Loop
 # simulation main loop
 def run_simulation():
     ## 1. Define variables
+    parser = optparse.OptionParser()
+    parser.add_option('-i', '--iterations', dest='iterations', default=int(30e6), type='int', help='Number of iterations [default: %default]')
+    parser.add_option('-x', '--length_x', dest='length_x', default=1, type='float', help='Length in x direction [default: %default]')
+    parser.add_option('-y', '--length_y', dest='length_y', default=1, type='float', help='Length in y direction [default: %default]')
+    parser.add_option('-a', '--grid_size_x', dest='grid_size_x', default=129, type='int', help='Grid size in x direction [default: %default]')
+    parser.add_option('-b', '--grid_size_y', dest='grid_size_y', default=129, type='int', help='Grid size in y direction [default: %default]')
+    parser.add_option('-d', '--density', dest='density', default=1.0, type='float', help='Density [default: %default]')
+    parser.add_option('-n', '--viscosity', dest='viscosity', default=0.01, type='float', help='Viscosity [default: %default]')
+    parser.add_option('-t', '--time_step', dest='time_step', default=0.00001, type='float', help='Time step [default: %default]')
+    parser.add_option('-e', '--min_tolerance', dest='min_tolerance', default=1e-15, type='float', help='Minimum tolerance [default: %default]')
+    parser.add_option('-E', '--max_tolerance', dest='max_tolerance', default=1e15, type='float', help='Maximum tolerance [default: %default]')
+    parser.add_option('-v', '--video', dest='video', default='no', type='string', help='Create video (yes|no)  [default: %default]')
+    parser.add_option('-o', '--output', dest='output', type='string', help='Output file or folder (if video) for post processing [required]')
+    (options, args) = parser.parse_args()
+    required = ['output']
+    for r in required:
+        if options.__dict__[r] is None:
+            parser.print_help()
+            sys.exit(1)
+
+    if options.video == 'yes':
+        output_dir = options.output
+        # delete folder if exists
+        if os.path.exists(output_dir):
+            shutil.rmtree(output_dir)
+        # create folder
+        os.makedirs(output_dir)
+
     # Variables
-    length_x = 1 # m
-    length_y = 1 # m
-    grid_size_x = 129
-    grid_size_y = 129
-    density = 1.0 # kg/m^3
-    cinematic_viscosity = 0.01 # m^2/s
-    min_tolerance = 1e-15
-    max_tolerance = 1e15
-    time_step = 0.00001 # s # Durch herausprobieren herausgefunden
+    length_x = options.length_x # m
+    length_y = options.length_y # m
+    grid_size_x = options.grid_size_x
+    grid_size_y =  options.grid_size_y
+    density = options.density # kg/m^3
+    cinematic_viscosity = options.viscosity # m^2/s
+    min_tolerance = options.min_tolerance
+    max_tolerance = options.max_tolerance
+    time_step = options.time_step # s
     grid_ux_old = np.zeros((grid_size_x, grid_size_y))
     grid_uy_old = np.zeros((grid_size_x, grid_size_y))
     grid_p_old = np.zeros((grid_size_x, grid_size_y))
@@ -201,7 +236,7 @@ def run_simulation():
     diffs = []
     p_diffs = []
 
-    pbar = tqdm(range(MAX_ITERATIONS))
+    pbar = tqdm(range(options.iterations))
     last_time = time.time()
     pool = multiprocessing.Pool()
     for i in pbar:
@@ -226,17 +261,17 @@ def run_simulation():
         # check if 60 seconds have passed
         if time.time() - last_time >= 60:
             last_time = time.time()
-            pool.apply_async(save_results, args=(length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, uxo, uyo, po, ro, uxn, uyn, pn, rn, t, tot_p, tot_v, iterations, diffs, p_diffs))
+            pool.apply_async(save_results, args=(options, length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, uxo, uyo, po, ro, uxn, uyn, pn, rn, t, tot_p, tot_v, iterations, diffs, p_diffs))
     pool.close()
 
-    if iterations == MAX_ITERATIONS:
-        print("Warning: Velocity solver did not converge after MAX_ITERATIONS iterations")
+    if iterations == options.iterations:
+        print("Warning: Velocity solver did not converge after {options.iterations} iterations")
 
     print("")
     print(f"Pressure residual: {p_diffs[-1]}")
     print(f"Velocity residual: {diffs[-1]}")
 
-    save_results(length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, uxo, uyo, po, ro, uxn, uyn, pn, rn, t, tot_p, tot_v, iterations, diffs, p_diffs)
+    save_results(options, length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, uxo, uyo, po, ro, uxn, uyn, pn, rn, t, tot_p, tot_v, iterations, diffs, p_diffs)
 
 if __name__ == "__main__": 
     run_simulation()
