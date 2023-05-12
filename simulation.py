@@ -309,7 +309,7 @@ def run_simulation():
         iterations += 1
         pbar.set_description(f"Pressure residual: {p_diff:.2E}, Velocity residual: {diff:.2E}")
         # save results every 1000 iterations
-        if iterations % 1000:
+        if iterations % 1000 == 0:
             task_queue.put(
                 (options, length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, uxo, uyo, po, ro, uxn, uyn, pn, rn, t, tot_p, tot_v, iterations, diffs, p_diffs)
             )

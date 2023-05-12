@@ -262,6 +262,11 @@ if __name__ == "__main__":
             pass
     
     output_files = list(map(lambda x: f"{output_dir}/{x}.jpg", virtual_timesteps))
+
+    # delete file if exists
+    if os.path.exists(options.output):
+        os.remove(options.output)
+
     os.system(f"ffmpeg -framerate 30 -i {output_dir}/%d.jpg -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p {options.output}")
 
     save_last_timestep(timesteps[-1], options.last_timestep_file)
