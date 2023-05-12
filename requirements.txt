@@ -1,0 +1,7 @@
+numpy
+numba
+matplotlib
+tqdm
+h5py
+optparse
+imageio

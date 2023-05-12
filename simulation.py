@@ -1,15 +1,37 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+#
+# Copyright 2023 André Glatzl
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, see <http://www.gnu.org/licenses/>.
+
 import pickle
 import numpy as np
 from numba import jit
 import matplotlib.pyplot as plt
 import matplotlib.animation as anime
 from tqdm import tqdm
-import multiprocessing
+import threading
+import queue
+import h5py
 import time
 import sys
 import os
-import shutil
 import optparse
+
+event = threading.Event()
+task_queue = queue.Queue()
 
 """
 2017 A. R. Malipeddi
@@ -151,16 +173,45 @@ def solve_navier_stokes(uxo, uyo, po, ro, uxn, uyn, pn, rn, dt, dx, dy, dx2, dy2
 
 def save_results(options, length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, uxo, uyo, po, ro, uxn, uyn, pn, rn, t, tot_p, tot_v, iterations, diffs, p_diffs):
     uxo, uyo, po = update_boundaries(uxo, uyo, po)
-    vars = [length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, uxo, uyo, po, ro, uxn, uyn, pn, rn, t, tot_p, tot_v, iterations, diffs, p_diffs]
-    if options.video == 'yes':
-        num = str(iterations).zfill(4)
-        output_file = f"{options.output}/simulation.{num}.pickle"
-        with open(output_file, 'wb') as f:
-            pickle.dump(vars, f)
-    else:
-        output_file = f"{options.output}"
-        with open(output_file, 'wb') as f:
-            pickle.dump(vars, f)
+    output_file = f"{options.output}"
+
+    with h5py.File(output_file, 'a') as f:
+        g = f.create_group(f"timestep_{iterations}")
+        g.create_dataset('length_x', data=length_x)
+        g.create_dataset('length_y', data=length_y)
+        g.create_dataset('grid_size_x', data=grid_size_x)
+        g.create_dataset('grid_size_y', data=grid_size_y)
+        g.create_dataset('dt', data=dt)
+        g.create_dataset('dx', data=dx)
+        g.create_dataset('dy', data=dy)
+        g.create_dataset('dx2', data=dx2)
+        g.create_dataset('dy2', data=dy2)
+        g.create_dataset('rho', data=rho)
+        g.create_dataset('nu', data=nu)
+        g.create_dataset('min_tol', data=min_tol)
+        g.create_dataset('max_tol', data=max_tol)
+        g.create_dataset('uxo', data=uxo)
+        g.create_dataset('uyo', data=uyo)
+        g.create_dataset('po', data=po)
+        g.create_dataset('ro', data=ro)
+        g.create_dataset('uxn', data=uxn)
+        g.create_dataset('uyn', data=uyn)
+        g.create_dataset('pn', data=pn)
+        g.create_dataset('rn', data=rn)
+        g.create_dataset('t', data=t)
+        g.create_dataset('tot_p', data=tot_p)
+        g.create_dataset('tot_v', data=tot_v)
+        g.create_dataset('iterations', data=iterations)
+        g.create_dataset('diffs', data=diffs)
+        g.create_dataset('p_diffs', data=p_diffs)
+
+def save_results_thread():
+    while True:
+        if event.is_set():
+            break
+        options, length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, uxo, uyo, po, ro, uxn, uyn, pn, rn, t, tot_p, tot_v, iterations, diffs, p_diffs = task_queue.get()
+        save_results(options, length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, uxo, uyo, po, ro, uxn, uyn, pn, rn, t, tot_p, tot_v, iterations, diffs, p_diffs)
+        task_queue.task_done()
 
 # 2. Main Loop
 # simulation main loop
@@ -175,10 +226,9 @@ def run_simulation():
     parser.add_option('-d', '--density', dest='density', default=1.0, type='float', help='Density [default: %default]')
     parser.add_option('-n', '--viscosity', dest='viscosity', default=0.01, type='float', help='Viscosity [default: %default]')
     parser.add_option('-t', '--time_step', dest='time_step', default=0.00001, type='float', help='Time step [default: %default]')
-    parser.add_option('-e', '--min_tolerance', dest='min_tolerance', default=1e-15, type='float', help='Minimum tolerance [default: %default]')
-    parser.add_option('-E', '--max_tolerance', dest='max_tolerance', default=1e15, type='float', help='Maximum tolerance [default: %default]')
-    parser.add_option('-v', '--video', dest='video', default='no', type='string', help='Create video (yes|no)  [default: %default]')
-    parser.add_option('-o', '--output', dest='output', type='string', help='Output file or folder (if video) for post processing [required]')
+    parser.add_option('-e', '--min_tolerance', dest='min_tolerance', default=1e-8, type='float', help='Minimum tolerance [default: %default]')
+    parser.add_option('-E', '--max_tolerance', dest='max_tolerance', default=1e8, type='float', help='Maximum tolerance [default: %default]')
+    parser.add_option('-o', '--output', dest='output', type='string', help='Output file for post processing [required]')
     (options, args) = parser.parse_args()
     required = ['output']
     for r in required:
@@ -186,13 +236,11 @@ def run_simulation():
             parser.print_help()
             sys.exit(1)
 
-    if options.video == 'yes':
-        output_dir = options.output
-        # delete folder if exists
-        if os.path.exists(output_dir):
-            shutil.rmtree(output_dir)
-        # create folder
-        os.makedirs(output_dir)
+    # delete file
+    try:
+        os.remove(options.output)
+    except OSError:
+        pass
 
     # Variables
     length_x = options.length_x # m
@@ -237,8 +285,10 @@ def run_simulation():
     p_diffs = []
 
     pbar = tqdm(range(options.iterations))
-    last_time = time.time()
-    pool = multiprocessing.Pool()
+
+    save_thread = threading.Thread(target=save_results_thread)
+    save_thread.start()
+
     for i in pbar:
         uxo, uyo, po = update_boundaries(uxo, uyo, po)
         uxn, uyn, pn, rn, p_diff = solve_navier_stokes(uxo, uyo, po, ro, uxn, uyn, pn, rn, dt, dx, dy, dx2, dy2, length_x, length_y, rho, nu, grid_size_x, grid_size_y, min_tol, max_tol)
@@ -258,11 +308,16 @@ def run_simulation():
         uxo, uyo, po = uxn.copy(), uyn.copy(), pn.copy()
         iterations += 1
         pbar.set_description(f"Pressure residual: {p_diff:.2E}, Velocity residual: {diff:.2E}")
-        # check if 60 seconds have passed
-        if time.time() - last_time >= 60:
-            last_time = time.time()
-            pool.apply_async(save_results, args=(options, length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, uxo, uyo, po, ro, uxn, uyn, pn, rn, t, tot_p, tot_v, iterations, diffs, p_diffs))
-    pool.close()
+        # save results every 1000 iterations
+        if iterations % 1000:
+            task_queue.put(
+                (options, length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, uxo, uyo, po, ro, uxn, uyn, pn, rn, t, tot_p, tot_v, iterations, diffs, p_diffs)
+            )
+    task_queue.put(
+        (options, length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, uxo, uyo, po, ro, uxn, uyn, pn, rn, t, tot_p, tot_v, iterations + 1, diffs, p_diffs)
+    )
+    event.set()
+    save_thread.join()
 
     if iterations == options.iterations:
         print("Warning: Velocity solver did not converge after {options.iterations} iterations")
@@ -270,8 +325,6 @@ def run_simulation():
     print("")
     print(f"Pressure residual: {p_diffs[-1]}")
     print(f"Velocity residual: {diffs[-1]}")
-
-    save_results(options, length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, uxo, uyo, po, ro, uxn, uyn, pn, rn, t, tot_p, tot_v, iterations, diffs, p_diffs)
 
 if __name__ == "__main__": 
     run_simulation()

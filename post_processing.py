@@ -1,3 +1,21 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+#
+# Copyright 2023 André Glatzl
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation; either version 2 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, see <http://www.gnu.org/licenses/>.
+
 import pickle
 import numpy as np
 import matplotlib.pyplot as plt
@@ -6,6 +24,7 @@ import multiprocessing as mp
 import optparse
 import imageio
 import shutil
+import h5py
 import glob
 import sys
 import os
@@ -53,7 +72,34 @@ reference_uy_RE_100 = {
 }
 
 def post_processing(vars, output_file):
-    length_x, length_y, grid_size_x, grid_size_y, dt, dx, dy, dx2, dy2, rho, nu, min_tol, max_tol, uxo, uyo, po, ro, uxn, uyn, pn, rn, t, tot_p, tot_v, iterations, diffs, p_diffs = vars
+    length_x = vars['length_x']
+    length_y = vars['length_y']
+    grid_size_x = vars['grid_size_x']
+    grid_size_y = vars['grid_size_y']
+    dt = vars['dt']
+    dx = vars['dx']
+    dy = vars['dy']
+    dx2 = vars['dx2']
+    dy2 = vars['dy2']
+    rho = vars['rho']
+    nu = vars['nu']
+    min_tol = vars['min_tol']
+    max_tol = vars['max_tol']
+    uxo = vars['uxo']
+    uyo = vars['uyo']
+    po = vars['po']
+    ro = vars['ro']
+    uxn = vars['uxn']
+    uyn = vars['uyn']
+    pn = vars['pn']
+    rn = vars['rn']
+    t = vars['t']
+    tot_p = vars['tot_p']
+    tot_v = vars['tot_v']
+    iterations = vars['iterations']
+    diffs = vars['diffs']
+    p_diffs = vars['p_diffs']
+
     vmo = np.sqrt(uxo**2 + uyo**2)
     X, Y = np.meshgrid(np.linspace(0, length_x, grid_size_x), np.linspace(0, length_y, grid_size_y))	
     fig, axs = plt.subplots(6, 2, figsize=(14, 30))
@@ -160,42 +206,65 @@ def post_processing(vars, output_file):
     plt.savefig(f"{output_file}")
 
 def prepare_post_processing(args):
-    input_file, output_file = args
-    with open(input_file, "rb") as f:
-        vars = pickle.load(f)
-    post_processing(vars, output_file)
+    timestep, virtual_timestep, output_dir = args
+    
+    with h5py.File(options.input, 'r') as f:
+        datasets = np.array(f[f"timestep_{timestep}"])
+        vars = {}
+        for i in range(len(datasets)):
+            dataset = f[f"timestep_{timestep}"][datasets[i]]
+            vars[datasets[i]] = dataset[()].astype(dataset.dtype).reshape(dataset.shape)
+
+    post_processing(vars, f"{output_dir}/{virtual_timestep}.jpg")
+
+def save_last_timestep(timestep, filename):
+    with h5py.File(options.input, 'r') as f:
+        datasets = np.array(f[f"timestep_{timestep}"])
+        vars = {}
+        for i in range(len(datasets)):
+            dataset = f[f"timestep_{timestep}"][datasets[i]]
+            vars[datasets[i]] = dataset[()].astype(dataset.dtype).reshape(dataset.shape)
+    
+    post_processing(vars, filename)
 
 if __name__ == "__main__":
     parser = optparse.OptionParser()
-    parser.add_option('-i', '--input', dest='input', help='Input file name or folder (if video) [default: %default]', default="simulation.pickle")
-    parser.add_option('-o', '--output', dest='output', help='Image Output file name with extension [required]')
-    parser.add_option('-v', '--video', dest='video', default='no', type='string', help='Create video (yes|no)  [default: %default]')
+    parser.add_option('-i', '--input', dest='input', help='Input file name [default: %default]', default="simulation.h5")
+    parser.add_option('-l', '--last-timestep-file', dest='last_timestep_file', help='Last timestep file name with extension [required]') 
+    parser.add_option('-o', '--output', dest='output', help='Video Output file name with extension [required]')
     (options, args) = parser.parse_args()
-    required = ['output']
+    required = ['last_timestep_file', 'output']
     for r in required:
         if options.__dict__[r] is None:
             parser.print_help()
             sys.exit(1)
-    if options.video == 'yes':
-        output_dir = 'output_img'
-        # delete folder if exists
-        if os.path.exists(output_dir):
-            shutil.rmtree(output_dir)
-        # create folder
-        os.makedirs(output_dir)
-        input_files = glob.glob(f"{options.input}/*.pickle")
-        output_files = list(map(lambda x: x.replace(f"{options.input}/", f"{output_dir}/").replace(".pickle", ".jpg"), input_files))
-        args = list(zip(input_files, output_files))
-        with mp.Pool() as pool:
-            for _ in tqdm(pool.imap_unordered(prepare_post_processing, args), total=len(args)):
-                pass
-        files = sorted(glob.glob(f"{output_dir}/*.jpg"), key=os.path.getmtime)
-        with imageio.get_writer(options.output, mode='I') as writer:
-            for filename in files:
-                image = imageio.imread(filename)
-                writer.append_data(image)
 
-        if os.path.exists(output_dir):
-            shutil.rmtree(output_dir)
-    else:
-        prepare_post_processing((options.input, options.output))
+    output_dir = 'output_img'
+    # delete folder if exists
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
+    os.makedirs(output_dir)
+
+    with h5py.File(options.input, 'r') as f:
+        timesteps = sorted(list(map(lambda x: int(x.replace('timestep_', '')), list(f.keys()))))
+
+    if len(timesteps) > 300:
+        # split timestemps in 300 chunks
+        chunked_timesteps = np.array_split(timesteps, 300)
+        # select last timestep of each chunk
+        timesteps = list(map(lambda x: x[-1], chunked_timesteps))
+    virtual_timesteps = list(range(len(timesteps)))
+
+    args = list(map(lambda x: (timesteps[x], x, output_dir), virtual_timesteps))
+
+    with mp.Pool() as pool:
+        for _ in tqdm(pool.imap_unordered(prepare_post_processing, args), total=len(timesteps)):
+            pass
+    
+    output_files = list(map(lambda x: f"{output_dir}/{x}.jpg", virtual_timesteps))
+    os.system(f"ffmpeg -framerate 30 -i {output_dir}/%d.jpg -c:v libx264 -profile:v high -crf 20 -pix_fmt yuv420p {options.output}")
+
+    save_last_timestep(timesteps[-1], options.last_timestep_file)
+
+    if os.path.exists(output_dir):
+        shutil.rmtree(output_dir)
