@@ -218,7 +218,7 @@ def save_results_thread():
 def run_simulation():
     ## 1. Define variables
     parser = optparse.OptionParser()
-    parser.add_option('-i', '--iterations', dest='iterations', default=int(30e6), type='int', help='Number of iterations [default: %default]')
+    parser.add_option('-i', '--max-iterations', dest='iterations', default=int(30e6), type='int', help='Number of max iterations [default: %default]')
     parser.add_option('-x', '--length_x', dest='length_x', default=1, type='float', help='Length in x direction [default: %default]')
     parser.add_option('-y', '--length_y', dest='length_y', default=1, type='float', help='Length in y direction [default: %default]')
     parser.add_option('-a', '--grid_size_x', dest='grid_size_x', default=129, type='int', help='Grid size in x direction [default: %default]')
